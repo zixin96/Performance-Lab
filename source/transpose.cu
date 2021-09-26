@@ -81,15 +81,17 @@ void preprocess(float *res, float *dev_res, int n)
 // TODO: COMPLETE THIS
 __global__ void copyKernel(const float* const a, float* const b)
 {
-    int i = 0;  // Compute correctly - Global X index
-    int j = 0;  // Compute correctly - Global Y index
+    int i = threadIdx.x + blockIdx.x * blockDim.x;  // Compute correctly - Global X index
+    int j = threadIdx.y + blockIdx.y * blockDim.y;  // Compute correctly - Global Y index
 
     // Check if i or j are out of bounds. If they are, return.
+    if (i < sizeX && j < sizeY)
+    {
+        int index = j * sizeX + i;      // Compute 1D index from i, j
 
-    int index = 0;      // Compute 1D index from i, j
-
-    // Copy data from A to B
-    b[index] = a[index];
+        // Copy data from A to B
+        b[index] = a[index];
+    }
 }
 
 // TODO: COMPLETE THIS
@@ -166,8 +168,42 @@ __global__ void matrixTransposeUnrolled(const float* a, float* b)
     //Copy data from shared memory to global memory. Multiple copies per thread.
 }
 
+
+int deviceMaxThreadsPerBlock;
+int deviceSharedMemPerBlock;
+int deviceMaxThreadsPerSM;
+int deviceMaxBlocksPerSM;
+
+bool getMachineInfo()
+{
+    cudaDeviceProp deviceProp;
+    int gpuDevice = 0;
+    int device_count = 0;
+    cudaGetDeviceCount(&device_count);
+    if (gpuDevice > device_count) {
+        std::cout
+            << "Error: GPU device number is greater than the number of devices!"
+            << " Perhaps a CUDA-capable GPU is not installed?"
+            << std::endl;
+        return false;
+    }
+    cudaGetDeviceProperties(&deviceProp, gpuDevice);
+    int major = deviceProp.major;
+    int minor = deviceProp.minor;
+    deviceMaxThreadsPerBlock = deviceProp.maxThreadsPerBlock;
+    deviceSharedMemPerBlock = deviceProp.sharedMemPerBlock;
+    deviceMaxThreadsPerSM = deviceProp.maxThreadsPerMultiProcessor;
+    deviceMaxBlocksPerSM = deviceProp.maxBlocksPerMultiProcessor;
+
+    return true;
+}
+
 int main(int argc, char *argv[])
 {
+    if (!getMachineInfo())
+    {
+        return;
+    }
     //Run Memcpy benchmarks
     nvtxRangeId_t cudaBenchmark = nvtxRangeStart("CUDA Memcpy Benchmark");
     memBenchmark();
@@ -199,7 +235,9 @@ int main(int argc, char *argv[])
     {
         for (int ii = 0; ii < sizeX; ii++)
         {
+            // a_gold is a
             a_gold[jj * sizeX + ii] = a[jj * sizeX + ii];
+            // b_gold is transpose of a 
             b_gold[ii * sizeY + jj] = a[jj * sizeX + ii];
         }
     }
@@ -250,9 +288,13 @@ int main(int argc, char *argv[])
         // Assign a 2D distribution of BS_X x BS_Y x 1 CUDA threads within
         // Calculate number of blocks along X and Y in a 2D CUDA "grid"
         DIMS dims;
-        dims.dimBlock = dim3(1, 1, 1);
-        dims.dimGrid  = dim3(1,
-                             1,
+        // remember: max threads per block is 1024
+        int blockDimX = 16;
+        int blockDimY = 16;
+        assert(blockDimX * blockDimY <= deviceMaxThreadsPerBlock);
+        dims.dimBlock = dim3(blockDimX, blockDimY, 1);
+        dims.dimGrid  = dim3((sizeX + blockDimX - 1) / blockDimX,
+                             (sizeY + blockDimY - 1) / blockDimY,
                              1);
 
         // start the timer
