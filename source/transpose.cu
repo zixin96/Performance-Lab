@@ -97,16 +97,18 @@ __global__ void copyKernel(const float* const a, float* const b)
 // TODO: COMPLETE THIS
 __global__ void matrixTransposeNaive(const float* const a, float* const b)
 {
-    int i = 0;  // Compute correctly - Global X index
-    int j = 0;  // Compute correctly - Global Y index
+    int i = threadIdx.x + blockIdx.x * blockDim.x;  // Compute correctly - Global X index
+    int j = threadIdx.y + blockIdx.y * blockDim.y;  // Compute correctly - Global Y index
 
     // Check if i or j are out of bounds. If they are, return.
+    if (i < sizeX && j < sizeY)
+    {
+        int index_in = j * sizeX + i;  // Compute input index (i,j) from matrix A
+        int index_out = i * sizeY + j;  // Compute output index (j,i) in matrix B = transpose(A)
 
-    int index_in = 0;  // Compute input index (i,j) from matrix A
-    int index_out = 0;  // Compute output index (j,i) in matrix B = transpose(A)
-
-    // Copy data from A to B using transpose indices
-    b[index_out] = a[index_in];
+        // Copy data from A to B using transpose indices
+        b[index_out] = a[index_in];
+    }
 }
 
 // TODO: COMPLETE THIS
@@ -278,6 +280,10 @@ int main(int argc, char *argv[])
     ////////////////////////////////////////////////////////////
 #endif
 
+    int blockDimX = 16;
+    int blockDimY = 16;
+    assert(blockDimX * blockDimY <= deviceMaxThreadsPerBlock);
+
     ////////////////////////////////////////////////////////////
     std::cout << "****************************************************" << std::endl;
     std::cout << "***Device To Device Copy***" << std::endl;
@@ -288,10 +294,6 @@ int main(int argc, char *argv[])
         // Assign a 2D distribution of BS_X x BS_Y x 1 CUDA threads within
         // Calculate number of blocks along X and Y in a 2D CUDA "grid"
         DIMS dims;
-        // remember: max threads per block is 1024
-        int blockDimX = 16;
-        int blockDimY = 16;
-        assert(blockDimX * blockDimY <= deviceMaxThreadsPerBlock);
         dims.dimBlock = dim3(blockDimX, blockDimY, 1);
         dims.dimGrid  = dim3((sizeX + blockDimX - 1) / blockDimX,
                              (sizeY + blockDimY - 1) / blockDimY,
@@ -336,10 +338,10 @@ int main(int argc, char *argv[])
         // Assign a 2D distribution of BS_X x BS_Y x 1 CUDA threads within
         // Calculate number of blocks along X and Y in a 2D CUDA "grid"
         DIMS dims;
-        dims.dimBlock = dim3(1, 1, 1);
-        dims.dimGrid  = dim3(1,
-                             1,
-                             1);
+        dims.dimBlock = dim3(blockDimX, blockDimY, 1);
+        dims.dimGrid = dim3((sizeX + blockDimX - 1) / blockDimX,
+                            (sizeY + blockDimY - 1) / blockDimY,
+                            1);
 
         nvtxRangeId_t naiveTransposeBenchmark = nvtxRangeStart("Naive Transpose Benchmark");
         cudaEventRecord(start, 0);
